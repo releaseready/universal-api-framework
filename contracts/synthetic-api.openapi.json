@@ -1,0 +1,85 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Synthetic API",
+    "version": "1.0.0",
+    "description": "Contract of the owned synthetic API in tests/fixtures/synthetic-api.ts. Synthetic data only; it describes the test fixture, not any customer or ReleaseReady API."
+  },
+  "servers": [{ "url": "http://127.0.0.1:3000" }],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Report that the synthetic API is up",
+        "responses": {
+          "200": {
+            "description": "The service is healthy",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Health" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/widgets/{widgetId}": {
+      "get": {
+        "operationId": "getWidget",
+        "summary": "Read one synthetic widget",
+        "parameters": [
+          {
+            "name": "widgetId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The widget",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Widget" }
+              }
+            }
+          },
+          "404": {
+            "description": "No such widget",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Health": {
+        "type": "object",
+        "required": ["status", "source"],
+        "properties": {
+          "status": { "type": "string" },
+          "source": { "type": "string" }
+        }
+      },
+      "Widget": {
+        "type": "object",
+        "required": ["id", "name", "active"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "active": { "type": "boolean" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": { "error": { "type": "string" } }
+      }
+    }
+  }
+}

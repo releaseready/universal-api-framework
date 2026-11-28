@@ -3,3 +3,4 @@ dist/
 .performance-results/
 package-lock.json
 .claude/
+src/generated/

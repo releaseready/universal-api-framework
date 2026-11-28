@@ -210,6 +210,20 @@ recovery. The same process/host memory and activation limitations described abov
 still apply. No hashes, normalization, version identity, inventory/diff, storage,
 permissions, credentials, UI or live intake are added by this stage.
 
+## Generated API clients (OpenAPI Generator)
+
+Typed TypeScript clients are generated from the OpenAPI contracts in `contracts/` with OpenAPI Generator
+(`typescript-fetch`, version pinned in `openapitools.json`, needs Java 11+). Today the only contract is the synthetic
+one that describes `tests/fixtures/synthetic-api.ts`; it produces `src/generated/synthetic-api/`.
+
+- `npm run generate` rewrites the committed clients. Never edit generated files.
+- `npm run generate:check` fails when committed output differs from a fresh generation; `npm test` runs the same
+  check, so CI fails on drift.
+- To add a contract, add an entry to `CLIENTS` in `src/codegen/cli.ts`. Private product contracts (for example
+  the ReleaseReady central API) are not stored in this public repository; generate their clients in the repository
+  that owns them.
+- Pass the guarded fetch client (`tests/http-client.ts`) as `fetchApi` so target-safety rules still apply.
+
 ## Licence
 
 Apache-2.0. See [LICENSE](LICENSE).

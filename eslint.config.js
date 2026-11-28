@@ -13,7 +13,8 @@ export default defineConfig(
       "./tsconfig.k6.json",
     ],
   }),
-  { ignores: [".tools/", ".performance-results/"] },
+  // src/generated/ is OpenAPI Generator output, rewritten by npm run generate and never edited by hand.
+  { ignores: [".tools/", ".performance-results/", "src/generated/"] },
   {
     // k6 runs these scripts in its own runtime, which provides these globals instead of Node's.
     files: ["performance/workload.js", "performance/limits.js"],
