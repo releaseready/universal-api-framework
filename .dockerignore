@@ -1,0 +1,15 @@
+.git
+.github
+.claude
+.husky
+node_modules
+dist
+.env
+.e2e-results
+.performance-results
+contracts
+docs
+skills
+*.md
+performance/*
+!performance/loopback.ts

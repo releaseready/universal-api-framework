@@ -1,0 +1,117 @@
+# Runner image (RRDPLAT-97). Only GitHub-owned actions are used because the repository's Actions policy allows nothing
+# else; everything else is the docker and aws CLIs on the runner. Keeps Actions spend low (org budget $10/month): path-filtered, skipped for drafts, superseded
+# runs are cancelled. A pull request builds linux/amd64 only on the native runner (Trivy scan and a smoke run); no
+# multi-arch build and no push. Pushes to main and manual runs build linux/arm64 on a native arm64 runner and push to ECR
+# only when the repository variable AWS_ECR_PUSH_ROLE_ARN is set (OIDC, no stored key); otherwise the push is skipped.
+name: Runner image
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - package.json
+      - package-lock.json
+      - src/**
+      - tests/**
+      - .github/workflows/docker.yml
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - package.json
+      - package-lock.json
+      - src/**
+      - .github/workflows/docker.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  IMAGE: api-runner
+  ECR_REGION: ap-south-1
+  ECR_REPOSITORY: releaseready/runner-api
+  # Trivy runs as a container pinned by digest (aquasec/trivy 0.76.2).
+  TRIVY_IMAGE: aquasec/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+jobs:
+  pull-request:
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build linux/amd64 (no push)
+        env:
+          NPM_TOKEN: ${{ github.token }}
+        run: |
+          printf '//npm.pkg.github.com/:_authToken=%s\n' "$NPM_TOKEN" > "$RUNNER_TEMP/npmrc"
+          docker build --platform linux/amd64 --secret id=npmrc,src="$RUNNER_TEMP/npmrc" -t "$IMAGE:pr" .
+          rm -f "$RUNNER_TEMP/npmrc"
+      - name: Trivy scan (fail on CRITICAL)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" \
+            image --severity CRITICAL --ignore-unfixed --exit-code 1 "$IMAGE:pr"
+      - name: Smoke run against a local stub (exit 0 and summary.json expected)
+        run: |
+          node -e 'require("node:http").createServer((_, res) => res.end("ok")).listen(18080, "127.0.0.1")' &
+          stub=$!
+          mkdir -p "$RUNNER_TEMP/out" && chmod 777 "$RUNNER_TEMP/out"
+          docker run --rm --network host --read-only --tmpfs /tmp \
+            -e RR_BASE_URL=http://127.0.0.1:18080 -e RR_RUN_ID=smoke \
+            -v "$RUNNER_TEMP/out:/out" "$IMAGE:pr"
+          kill "$stub"
+          test -s "$RUNNER_TEMP/out/smoke/summary.json"
+          grep -q '"exitCode": 0' "$RUNNER_TEMP/out/smoke/summary.json"
+
+  arm64:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build linux/arm64 on the native runner
+        env:
+          NPM_TOKEN: ${{ github.token }}
+        run: |
+          printf '//npm.pkg.github.com/:_authToken=%s\n' "$NPM_TOKEN" > "$RUNNER_TEMP/npmrc"
+          docker build --platform linux/arm64 --secret id=npmrc,src="$RUNNER_TEMP/npmrc" -t "$IMAGE:arm64" .
+          rm -f "$RUNNER_TEMP/npmrc"
+      - name: Push to ECR with the OIDC role (skipped when AWS_ECR_PUSH_ROLE_ARN is unset)
+        if: vars.AWS_ECR_PUSH_ROLE_ARN != ''
+        env:
+          ROLE_ARN: ${{ vars.AWS_ECR_PUSH_ROLE_ARN }}
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          token="$(curl -sSf -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)"
+          echo "::add-mask::$token"
+          credentials="$(aws sts assume-role-with-web-identity --region "$ECR_REGION" --role-arn "$ROLE_ARN" \
+            --role-session-name runner-image-push --web-identity-token "$token" --query Credentials --output json)"
+          AWS_ACCESS_KEY_ID="$(jq -r .AccessKeyId <<<"$credentials")"
+          AWS_SECRET_ACCESS_KEY="$(jq -r .SecretAccessKey <<<"$credentials")"
+          AWS_SESSION_TOKEN="$(jq -r .SessionToken <<<"$credentials")"
+          echo "::add-mask::$AWS_SECRET_ACCESS_KEY"
+          echo "::add-mask::$AWS_SESSION_TOKEN"
+          export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+          registry="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$ECR_REGION.amazonaws.com"
+          aws ecr get-login-password --region "$ECR_REGION" | docker login --username AWS --password-stdin "$registry"
+          for tag in "$GIT_SHA" main; do
+            docker tag "$IMAGE:arm64" "$registry/$ECR_REPOSITORY:$tag"
+            docker push "$registry/$ECR_REPOSITORY:$tag"
+          done
+          docker inspect --format 'Pushed digest {{index .RepoDigests 0}}' "$registry/$ECR_REPOSITORY:main"
