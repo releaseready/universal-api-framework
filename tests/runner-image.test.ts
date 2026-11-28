@@ -52,21 +52,26 @@ describe("Given the runner image files", () => {
   describe("and the docker workflow", () => {
     const workflow = read(".github/workflows/docker.yml");
 
-    it("When it uses an action, then it is pinned by a full commit SHA", () => {
+    it("When it uses an action, then it is GitHub-owned and pinned by a full commit SHA", () => {
       const uses = [...workflow.matchAll(/^\s*-?\s*uses: (\S+)/gm)].map(
         (match) => match[1] ?? "",
       );
       assert.ok(uses.length > 0);
       for (const action of uses) {
-        assert.match(action, /@[0-9a-f]{40}$/, action);
+        assert.match(action, /^actions\/[\w-]+@[0-9a-f]{40}$/, action);
       }
     });
 
-    it("When it runs on a pull request, then it builds amd64 only, never pushes and never uses QEMU", () => {
+    it("When a pull request runs it, then it builds amd64 only, never pushes and never uses QEMU", () => {
       assert.doesNotMatch(workflow, /qemu/i);
-      assert.match(workflow, /platforms: linux\/amd64/);
-      assert.match(workflow, /platforms: linux\/arm64/);
+      assert.match(workflow, /--platform linux\/amd64/);
+      assert.match(workflow, /--platform linux\/arm64/);
       assert.match(workflow, /if: github\.event_name != 'pull_request'/);
+      assert.match(workflow, /image --severity CRITICAL/);
+    });
+
+    it("When Trivy runs, then its image is pinned by digest", () => {
+      assert.match(workflow, /TRIVY_IMAGE: aquasec\/trivy@sha256:[0-9a-f]{64}/);
     });
 
     it("When the ECR push variable is unset, then the push is skipped", () => {
