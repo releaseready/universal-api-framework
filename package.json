@@ -14,6 +14,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "build": "tsc",
+    "generate": "node src/codegen/cli.ts generate",
+    "generate:check": "node src/codegen/cli.ts check",
     "test": "npm run build && node --test --test-concurrency=1 --test-reporter=spec dist/tests/*.test.js",
     "perf:smoke": "node performance/run.ts --profile direct-mock --workload smoke --fixture passing",
     "perf:fixture-fail": "node performance/run.ts --profile direct-mock --workload smoke --fixture failing",
@@ -29,6 +31,7 @@
   "devDependencies": {
     "@apidevtools/json-schema-ref-parser": "^16.0.8",
     "@buildproveship/config": "^5.1.0",
+    "@openapitools/openapi-generator-cli": "2.44.0",
     "@types/k6": "0.54.2",
     "@types/node": "22.19.0",
     "eslint": "10.15.0",
