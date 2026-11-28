@@ -27,13 +27,43 @@ the k6 scripts), `lint` (ESLint with type-checked typescript-eslint rules),
 
 Dependency installation needs access to the npm registry. After installation,
 type checking and smoke execution need no remote service, credentials, environment
-variables, account, Docker, or cloud infrastructure. The only GitHub workflow is a
-manually started code-quality scan; nothing runs automatically on a pull request.
+variables, account, Docker, or cloud infrastructure. Pull requests run the shared `ci` checks and, when the runner image files change, the path-filtered runner image build (below). The performance suites and the code-quality scan start manually or on a schedule.
 
 `npm test` compiles the TypeScript and runs Node's built-in BDD test runner with
 readable Given/When/Then scenario names. `npm run build` only compiles. Generated
 JavaScript lives in the ignored `dist/` directory; `npm test` runs the compiled
 test files.
+
+## Runner image
+
+`Dockerfile` packages the framework as a one-shot runner: it runs a suite against a target API, writes reports and
+exits with the result code. It is for the phase 1 UAT EC2 (or an on-demand GitHub Actions job); there is no always-on
+runner. Build it with the GitHub Packages token as a BuildKit secret (never a build argument):
+
+```sh
+docker build --secret id=npmrc,src=$HOME/.npmrc -t api-runner .
+docker run --rm --read-only --tmpfs /tmp -e RR_BASE_URL=http://127.0.0.1:8080 -v "$PWD/out:/out" api-runner
+```
+
+| Env var                   | Required                           | Meaning                                                                   |
+| ------------------------- | ---------------------------------- | ------------------------------------------------------------------------- |
+| `RR_BASE_URL`             | yes                                | Target API URL (no credentials).                                          |
+| `RR_ALLOWED_TARGET_HOSTS` | yes, if the target is non-loopback | Comma-separated exact hostnames. Empty by default; wildcards are refused. |
+| `RR_SUITE`                | no                                 | Glob of compiled test files. Default `dist/tests/smoke.test.js`.          |
+| `RR_RUN_ID`               | no                                 | Run folder name. Default a generated UUID.                                |
+| `RR_OUT_DIR`              | no                                 | Output root. Default `/out`.                                              |
+
+Safety rules for the target: a loopback target (`127.0.0.1`, `localhost`, `[::1]`) needs no opt-in. Any other target
+must use https and its host must match an `RR_ALLOWED_TARGET_HOSTS` entry exactly; otherwise the run exits 2 before any
+request. Tokens are read from the environment only and are never logged.
+
+Output: `$RR_OUT_DIR/$RR_RUN_ID/` holds `junit.xml`, `spec.txt` and `summary.json` (totals, duration, target origin only).
+Exit codes: `0` passed, `1` failures (or no test ran), `2` config error (including a refused target).
+
+The image runs as the non-root `node` user, is compatible with a read-only root filesystem (it writes only to `/tmp` and
+`RR_OUT_DIR`) and pins `node:24-bookworm-slim` by digest. `.github/workflows/docker.yml` builds `linux/amd64` on pull
+requests (Trivy scan, smoke run) and `linux/arm64` on `main`; it pushes to ECR only when the repository variable
+`AWS_ECR_PUSH_ROLE_ARN` is set.
 
 ## What the smoke tests prove
 

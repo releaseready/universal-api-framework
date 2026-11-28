@@ -1,0 +1,134 @@
+# Runner image (RRDPLAT-97). Keeps Actions spend low (org budget $10/month): path-filtered, skipped for drafts, superseded
+# runs are cancelled. A pull request builds linux/amd64 only on the native runner (Trivy scan and a smoke run); no
+# multi-arch build and no push. Pushes to main and manual runs build linux/arm64 on a native arm64 runner and push to ECR
+# only when the repository variable AWS_ECR_PUSH_ROLE_ARN is set (OIDC, no stored key); otherwise the push is skipped.
+name: Runner image
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - package.json
+      - package-lock.json
+      - src/**
+      - tests/**
+      - .github/workflows/docker.yml
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - package.json
+      - package-lock.json
+      - src/**
+      - .github/workflows/docker.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  IMAGE: api-runner
+  ECR_REGION: ap-south-1
+  ECR_REPOSITORY: releaseready/runner-api
+jobs:
+  pull-request:
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Write the GitHub Packages npmrc as a build secret
+        env:
+          NPM_TOKEN: ${{ github.token }}
+        run: printf '//npm.pkg.github.com/:_authToken=%s\n' "$NPM_TOKEN" > "$RUNNER_TEMP/npmrc"
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ env.IMAGE }}:pr
+          secret-files: |
+            npmrc=${{ runner.temp }}/npmrc
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:pr
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Smoke run against a local stub (exit 0 and summary.json expected)
+        run: |
+          node -e 'require("node:http").createServer((_, res) => res.end("ok")).listen(18080, "127.0.0.1")' &
+          stub=$!
+          mkdir -p "$RUNNER_TEMP/out" && chmod 777 "$RUNNER_TEMP/out"
+          docker run --rm --network host --read-only --tmpfs /tmp \
+            -e RR_BASE_URL=http://127.0.0.1:18080 -e RR_RUN_ID=smoke \
+            -v "$RUNNER_TEMP/out:/out" "$IMAGE:pr"
+          kill "$stub"
+          test -s "$RUNNER_TEMP/out/smoke/summary.json"
+          grep -q '"exitCode": 0' "$RUNNER_TEMP/out/smoke/summary.json"
+
+  arm64:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Write the GitHub Packages npmrc as a build secret
+        env:
+          NPM_TOKEN: ${{ github.token }}
+        run: printf '//npm.pkg.github.com/:_authToken=%s\n' "$NPM_TOKEN" > "$RUNNER_TEMP/npmrc"
+      - name: Build linux/arm64 (no push)
+        if: vars.AWS_ECR_PUSH_ROLE_ARN == ''
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/arm64
+          push: false
+          secret-files: |
+            npmrc=${{ runner.temp }}/npmrc
+      - name: Assume the ECR push role (OIDC)
+        if: vars.AWS_ECR_PUSH_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@45666896f5d8e0f10ae255413f3a4cdd03bdc8f5 # v6.3.1
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_PUSH_ROLE_ARN }}
+          aws-region: ${{ env.ECR_REGION }}
+      - name: Log in to ECR
+        id: ecr
+        if: vars.AWS_ECR_PUSH_ROLE_ARN != ''
+        uses: aws-actions/amazon-ecr-login@7290e214a610b32bc0eef81748948b6d466a8783 # v2.2.0
+      - name: Build and push linux/arm64 to ECR
+        id: push
+        if: vars.AWS_ECR_PUSH_ROLE_ARN != ''
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:main
+          secret-files: |
+            npmrc=${{ runner.temp }}/npmrc
+      - name: Print the pushed digest
+        if: vars.AWS_ECR_PUSH_ROLE_ARN != ''
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: echo "Pushed digest $DIGEST"
