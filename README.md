@@ -238,6 +238,24 @@ reporting to Test Management; the ingest adapter is separate work (RRDTM-97).
 - Product journeys against the BuildProveShip contract live with the product test assets, not in this generic
   framework.
 
+## OpenAPI versions, inventory and diff (in-memory)
+
+`src/versioning/` holds the logic slice of RRDAPI-14. It has no persistence, encryption, tenant authentication or
+target access; callers pass an already authenticated `{ tenantId, applicationId }` scope.
+
+- `OpenApiVersionStore.import` validates a document with the offline document-schema validation above, then records an
+  immutable version: filename, declared API version, import time, importer, original-content hash, normalized-content
+  hash (RFC 8785 canonical JSON) and the parser and normalization versions. Identical normalized content is
+  idempotent; changed content creates the next version. Rejections return only a failure code.
+- `buildInventory` lists each operation with a stable identity, parameters, request body, response schemas,
+  authentication and a source pointer, and reports missing or duplicate operation IDs and unresolved schemas.
+- `diffInventories` lists added, removed and changed operations with plain-language reasons; removals and changes are
+  treated as breaking and need review.
+- Other tenants get `undefined` for versions, inventories and diffs they do not own.
+
+Not covered: encrypted storage, retention and deletion, safe previews, linking affected cases and approvals (those
+need the Test Management contracts), and OpenAPI 3.1.
+
 ## Licence
 
 Apache-2.0. See [LICENSE](LICENSE).
