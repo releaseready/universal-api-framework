@@ -224,6 +224,20 @@ one that describes `tests/fixtures/synthetic-api.ts`; it produces `src/generated
   that owns them.
 - Pass the guarded fetch client (`tests/http-client.ts`) as `fetchApi` so target-safety rules still apply.
 
+## API e2e suite (profiles and case IDs)
+
+`tests/api-e2e.test.ts` runs API journey cases through a generated client. Each case has a stable ID in its title
+(`[API-<AREA>-<NNN>]`) and the run writes `.e2e-results/report.json` (profile, case ID, status, duration) for
+reporting to Test Management; the ingest adapter is separate work (RRDTM-97).
+
+- Profiles (`src/e2e/profiles.ts`): `local` (the owned loopback fixture, exercised in CI), and `dev`, `uat` and
+  `prod-smoke`, whose origins come from `API_E2E_DEV_ORIGIN`, `API_E2E_UAT_ORIGIN` and `API_E2E_PROD_SMOKE_ORIGIN`
+  (plain https only). `prod-smoke` allows GET only. The remote profiles are configured but not run in CI.
+- `createProfileFetch` (`src/e2e/profile-fetch.ts`) is the `fetchApi` for generated clients: it blocks other origins
+  and methods before sending, never follows redirects and times out.
+- Product journeys against the BuildProveShip contract live with the product test assets, not in this generic
+  framework.
+
 ## Licence
 
 Apache-2.0. See [LICENSE](LICENSE).
