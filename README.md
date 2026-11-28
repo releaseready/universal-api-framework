@@ -238,6 +238,41 @@ reporting to Test Management; the ingest adapter is separate work (RRDTM-97).
 - Product journeys against the BuildProveShip contract live with the product test assets, not in this generic
   framework.
 
+## OpenAPI versions, inventory and diff (in-memory)
+
+`src/versioning/` holds the logic slice of RRDAPI-14. It has no persistence, encryption, tenant authentication or
+target access; callers pass an already authenticated `{ tenantId, applicationId }` scope.
+
+- `OpenApiVersionStore.import` validates a document with the offline document-schema validation above, then records an
+  immutable version: filename, declared API version, import time, importer, original-content hash, normalized-content
+  hash (RFC 8785 canonical JSON) and the parser and normalization versions. Identical normalized content is
+  idempotent; changed content creates the next version. Rejections return only a failure code.
+- `buildInventory` lists each operation with a stable identity, parameters, request body, response schemas,
+  authentication and a source pointer, and reports missing or duplicate operation IDs and unresolved schemas.
+- `diffInventories` lists added, removed and changed operations with plain-language reasons; removals and changes are
+  treated as breaking and need review.
+- Other tenants get `undefined` for versions, inventories and diffs they do not own.
+
+Not covered: encrypted storage, retention and deletion, safe previews, linking affected cases and approvals (those
+need the Test Management contracts), and OpenAPI 3.1.
+
+## Customer SDK export (typescript-axios)
+
+`exportSdkBundle` (`src/export/export-sdk.ts`) turns one validated, normalized OpenAPI version into a customer-owned
+bundle: generated Axios client (`sdk/`, pinned OpenAPI Generator), starter contract tests for the selected reviewed
+cases (`tests/`, `it.todo` placeholders), `.env.example` with empty placeholders, README, `omissions.json`,
+a standalone `package.json`/`tsconfig.json` and `manifest.json`.
+
+- Deterministic: the same inputs give identical files and artifact hash; the manifest records spec version and hash,
+  case references, generator and Axios versions and the artifact hash.
+- Examples and servers are stripped from the document before generation, and the specification is not copied into the
+  bundle.
+- Unsupported constructs (today: `callbacks`) are listed in `omissions.json`.
+- The bundle typechecks on its own (tested). It does not publish anything, activate CI or contact a target.
+
+Not covered: tenant access, download expiry and provenance (AC 6), regeneration diff with preserved extension points
+(AC 5; the version diff is in `src/versioning`), lockfiles in the bundle, and real case-to-test generation.
+
 ## Run lifecycle building blocks
 
 `src/run-lifecycle/` is the bounded-run library for RRDAPI-3; it is not yet wired to a command-line entrypoint. It provides a retry-key registry (same key and inputs return the same run, changed inputs conflict), a bounded executor (concurrency limit, one time limit, cancellation; in-flight work is reported unresolved, unstarted scenarios `not-run`, finished results kept), distinct exit codes (`pass` 0, `assertion-failure` 1, `not-run` 2, `cancelled` 3, `infrastructure-error`/`timed-out` 4), a retry rule that never repeats an uncertain modifying request unless marked safe, a request-spacing rate limiter, and per-run state and temporary directories. It sends no request itself and enables no CI trigger or evidence upload.
