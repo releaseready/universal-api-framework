@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": ["performance/workload.js"],
+  "entry": ["performance/workload.js", "src/runner/main.ts"],
   "ignoreDependencies": ["k6", "@openapitools/openapi-generator-cli", "axios"],
   "ignore": ["src/generated/**"]
 }
