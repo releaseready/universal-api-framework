@@ -7,8 +7,9 @@ dist
 .env
 .e2e-results
 .performance-results
-performance
 contracts
 docs
 skills
 *.md
+performance/*
+!performance/loopback.ts

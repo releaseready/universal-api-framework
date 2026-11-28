@@ -9,6 +9,7 @@ RUN --mount=type=secret,id=npmrc,target=/run/secrets/npmrc \
     npm ci --ignore-scripts --userconfig /run/secrets/npmrc
 COPY tsconfig.json ./
 COPY src ./src
+COPY performance/loopback.ts ./performance/loopback.ts
 COPY tests ./tests
 RUN npm run build
 
