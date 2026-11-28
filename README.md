@@ -303,6 +303,10 @@ a standalone `package.json`/`tsconfig.json` and `manifest.json`.
 Not covered: tenant access, download expiry and provenance (AC 6), regeneration diff with preserved extension points
 (AC 5; the version diff is in `src/versioning`), lockfiles in the bundle, and real case-to-test generation.
 
+## Run lifecycle building blocks
+
+`src/run-lifecycle/` is the bounded-run library for RRDAPI-3; it is not yet wired to a command-line entrypoint. It provides a retry-key registry (same key and inputs return the same run, changed inputs conflict), a bounded executor (concurrency limit, one time limit, cancellation; in-flight work is reported unresolved, unstarted scenarios `not-run`, finished results kept), distinct exit codes (`pass` 0, `assertion-failure` 1, `not-run` 2, `cancelled` 3, `infrastructure-error`/`timed-out` 4), a retry rule that never repeats an uncertain modifying request unless marked safe, a request-spacing rate limiter, and per-run state and temporary directories. It sends no request itself and enables no CI trigger or evidence upload.
+
 ## Licence
 
 Apache-2.0. See [LICENSE](LICENSE).
