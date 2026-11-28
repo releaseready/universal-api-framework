@@ -220,7 +220,7 @@ one that describes `tests/fixtures/synthetic-api.ts`; it produces `src/generated
 - `npm run generate:check` fails when committed output differs from a fresh generation; `npm test` runs the same
   check, so CI fails on drift.
 - To add a contract, add an entry to `CLIENTS` in `src/codegen/cli.ts`. Private product contracts (for example
-  the ReleaseReady central API) are not stored in this public repository; generate their clients in the repository
+  the BuildProveShip central API) are not stored in this public repository; generate their clients in the repository
   that owns them.
 - Pass the guarded fetch client (`tests/http-client.ts`) as `fetchApi` so target-safety rules still apply.
 
