@@ -256,6 +256,23 @@ target access; callers pass an already authenticated `{ tenantId, applicationId 
 Not covered: encrypted storage, retention and deletion, safe previews, linking affected cases and approvals (those
 need the Test Management contracts), and OpenAPI 3.1.
 
+## Customer SDK export (typescript-axios)
+
+`exportSdkBundle` (`src/export/export-sdk.ts`) turns one validated, normalized OpenAPI version into a customer-owned
+bundle: generated Axios client (`sdk/`, pinned OpenAPI Generator), starter contract tests for the selected reviewed
+cases (`tests/`, `it.todo` placeholders), `.env.example` with empty placeholders, README, `omissions.json`,
+a standalone `package.json`/`tsconfig.json` and `manifest.json`.
+
+- Deterministic: the same inputs give identical files and artifact hash; the manifest records spec version and hash,
+  case references, generator and Axios versions and the artifact hash.
+- Examples and servers are stripped from the document before generation, and the specification is not copied into the
+  bundle.
+- Unsupported constructs (today: `callbacks`) are listed in `omissions.json`.
+- The bundle typechecks on its own (tested). It does not publish anything, activate CI or contact a target.
+
+Not covered: tenant access, download expiry and provenance (AC 6), regeneration diff with preserved extension points
+(AC 5; the version diff is in `src/versioning`), lockfiles in the bundle, and real case-to-test generation.
+
 ## Licence
 
 Apache-2.0. See [LICENSE](LICENSE).

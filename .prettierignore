@@ -4,3 +4,4 @@ dist/
 package-lock.json
 .claude/
 src/generated/
+.sdk-export-tmp/
